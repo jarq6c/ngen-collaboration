@@ -1,17 +1,26 @@
 """Explore IBTrACS data.
 https://www.ncei.noaa.gov/products/international-best-track-archive
 """
+from pathlib import Path
+from typing import Literal
 import xarray as xr
 import pandas as pd
 import geopandas as gpd
+
+GLOBAL_CRS: Literal["ESRI:102010"] = "ESRI:102010"
+"""Distance preserving CRS string."""
 
 def list_unique(s: pd.Series) -> str:
     """Returns all values as a comma-delimited list."""
     return ",".join(s.unique())
 
-def main() -> None:
+def main(
+        cyclone_tracks: Path = Path("IBTrACS.ALL.v04r01.nc"),
+        boundary_source: Path = Path("rfc_nwm_domain_boundaries_4326.geojson"),
+        output_file: Path = Path("rfc_tropical_storms.md")
+) -> None:
     """Main."""
-    ds = xr.open_dataset("IBTrACS.ALL.v04r01.nc")
+    ds = xr.open_dataset(cyclone_tracks)
 
     # Extract distance to land, nature, and categories
     variables = ["dist2land", "name", "nature", "usa_sshs"]
@@ -43,20 +52,18 @@ def main() -> None:
     )
 
     # Project to distance preserving CRS
-    crs: str = "ESRI:102010"
-    gdf = gpd.GeoDataFrame(df.reset_index()).to_crs(crs)
+    gdf = gpd.GeoDataFrame(df.reset_index()).to_crs(GLOBAL_CRS)
 
     # Load RFC boundaries
-    rfc_boundaries = gpd.read_file(
-        "rfc_nwm_domain_boundaries_4326.geojson").to_crs(crs)
+    boundaries = gpd.read_file(boundary_source).to_crs(GLOBAL_CRS)
 
     # Handle duplicate VI entries
-    rfc_boundaries.iloc[14, 1] = "VI1"
-    rfc_boundaries.iloc[16, 1] = "VI2"
-    rfc_boundaries.iloc[17, 1] = "VI3"
+    boundaries.iloc[14, 1] = "VI1"
+    boundaries.iloc[16, 1] = "VI2"
+    boundaries.iloc[17, 1] = "VI3"
 
     columns: list[str]  = []
-    for row in rfc_boundaries.itertuples():
+    for row in boundaries.itertuples():
         # Column
         col = f"{row.rfc}_{row.domain}"
         columns.append(col)
@@ -82,7 +89,7 @@ def main() -> None:
         output += f"## {col}\n\n"
         output += data.to_markdown() + "\n\n"
 
-    with open("rfc_tropical_storms.md", mode="w", encoding="utf-8") as fo:
+    with output_file.open(mode="w", encoding="utf-8") as fo:
         fo.write(output)
 
 if __name__ == "__main__":
